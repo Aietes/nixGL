@@ -15,11 +15,11 @@ driverSource ? "driver",
 # Enable 32 bits driver
 # This is one by default, you can switch it to off if you want to reduce a
 # bit the size of nixGL closure.
-enable32bits ? stdenv.hostPlatform.isx86
-, stdenv, writeTextFile, shellcheck, pcre, runCommand, linuxPackages
-, fetchurl, lib, runtimeShell, bumblebee, libglvnd, vulkan-validation-layers
-, mesa, libvdpau-va-gl, intel-media-driver, pkgsi686Linux, driversi686Linux
-, zlib, libdrm, xorg, wayland, gcc, zstd, rpm, cpio }:
+enable32bits ? stdenv.hostPlatform.isx86, stdenv, writeTextFile, shellcheck
+, pcre, runCommand, linuxPackages, fetchurl, lib, runtimeShell, bumblebee
+, libglvnd, vulkan-validation-layers, mesa, libvdpau-va-gl, intel-media-driver
+, pkgsi686Linux, driversi686Linux, zlib, libdrm, xorg, wayland, gcc, zstd, rpm
+, cpio }:
 
 let
   writeExecutable = { name, text }:
@@ -40,7 +40,8 @@ let
       '';
     };
 
-    writeNixGL = name: vadrivers: writeExecutable {
+  writeNixGL = name: vadrivers:
+    writeExecutable {
       inherit name;
       # add the 32 bits drivers if needed
       text = let
@@ -54,29 +55,46 @@ let
         '');
       in ''
         #!${runtimeShell}
-        export LIBGL_DRIVERS_PATH=${lib.makeSearchPathOutput "lib" "lib/dri" mesa-drivers}
-        export LIBVA_DRIVERS_PATH=${lib.makeSearchPathOutput "out" "lib/dri" (mesa-drivers ++ vadrivers)}
-        ${''export __EGL_VENDOR_LIBRARY_FILENAMES=${mesa.drivers}/share/glvnd/egl_vendor.d/50_mesa.json${
-          lib.optionalString enable32bits
-          ":${pkgsi686Linux.mesa.drivers}/share/glvnd/egl_vendor.d/50_mesa.json"
-          }"''${__EGL_VENDOR_LIBRARY_FILENAMES:+:$__EGL_VENDOR_LIBRARY_FILENAMES}"''
+        export LIBGL_DRIVERS_PATH=${
+          lib.makeSearchPathOutput "lib" "lib/dri" mesa-drivers
         }
-        export LD_LIBRARY_PATH=${lib.makeLibraryPath mesa-drivers}:${lib.makeSearchPathOutput "lib" "lib/vdpau" libvdpau}:${glxindirect}/lib:${lib.makeLibraryPath [libglvnd]}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        export LIBVA_DRIVERS_PATH=${
+          lib.makeSearchPathOutput "out" "lib/dri" (mesa-drivers ++ vadrivers)
+        }
+        ${''
+          export __EGL_VENDOR_LIBRARY_FILENAMES=${mesa.drivers}/share/glvnd/egl_vendor.d/50_mesa.json${
+            lib.optionalString enable32bits
+            ":${pkgsi686Linux.mesa.drivers}/share/glvnd/egl_vendor.d/50_mesa.json"
+          }"''${__EGL_VENDOR_LIBRARY_FILENAMES:+:$__EGL_VENDOR_LIBRARY_FILENAMES}"''}
+        export LD_LIBRARY_PATH=${lib.makeLibraryPath mesa-drivers}:${
+          lib.makeSearchPathOutput "lib" "lib/vdpau" libvdpau
+        }:${glxindirect}/lib:${
+          lib.makeLibraryPath [ libglvnd ]
+        }"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         exec "$@"
       '';
     };
 
   top = rec {
-    /*
-    It contains the builder for different nvidia configuration, parametrized by
-    the version of the driver and sha256 sum of the driver installer file.
+    /* It contains the builder for different nvidia configuration, parametrized by
+       the version of the driver and sha256 sum of the driver installer file.
     */
     nvidiaPackages = { version, sha256 ? null }: rec {
 
       # download rpm packages if RHEL is selected as driver source
       rpmLibs = if driverSource == "rhel" then
         builtins.fetchurl {
-          url = "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/nvidia-driver-libs-${version}-1.el9.x86_64.rpm";
+          url =
+            "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/nvidia-driver-libs-${version}-1.el9.x86_64.rpm";
+        }
+      else
+        null;
+
+      # also get the ml library if RHEL is selected as driver source, required by btop and other tools
+      rpmMl = if driverSource == "rhel" then
+        builtins.fetchurl {
+          url =
+            "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/libnvidia-ml-${version}-1.el9.x86_64.rpm";
         }
       else
         null;
@@ -89,23 +107,27 @@ let
         preferLocalBuild = true;
         allowSubstitutes = false;
         nativeBuildInputs = [ rpm cpio ];
-        srcs = [ rpmLibs ];
+        srcs = [ rpmLibs rpmMl ];
         unpackPhase = ''
           mkdir -p $TMPDIR
           cp ${rpmLibs} $TMPDIR/nvidia-driver-libs.rpm
+          cp ${rpmMl} $TMPDIR/libnvidia-ml.rpm
         '';
         buildPhase = ''
-          mkdir -p $out
+          mkdir -p $out $out/lib $out/share
           cd $TMPDIR
 
           rpm2cpio nvidia-driver-libs.rpm | cpio -idmv
-          mv usr/lib64 $out/lib
-          mv usr/share $out/share
+          mv usr/lib64/* $out/lib
+          mv usr/share/* $out/share
+
+          rpm2cpio libnvidia-ml.rpm | cpio -idmv
+          mv usr/lib64/* $out/lib
         '';
       };
 
-      nvidiaDrivers = if driverSource == "driver" then (linuxPackages.nvidia_x11.override { }).overrideAttrs
-        (oldAttrs: rec {
+      nvidiaDrivers = if driverSource == "driver" then
+        (linuxPackages.nvidia_x11.override { }).overrideAttrs (oldAttrs: rec {
           pname = "nvidia";
           name = "nvidia-x11-${version}-nixGL";
           inherit version;
@@ -117,13 +139,16 @@ let
           else
             builtins.fetchurl url;
           useGLVND = true;
-          nativeBuildInputs = oldAttrs.nativeBuildInputs or [] ++ [zstd];
+          nativeBuildInputs = oldAttrs.nativeBuildInputs or [ ] ++ [ zstd ];
         })
       else
         null;
 
       nvidiaLibsOnly = if driverSource == "driver" then
-        (nvidiaDrivers.override { libsOnly = true; kernel = null; })
+        (nvidiaDrivers.override {
+          libsOnly = true;
+          kernel = null;
+        })
       else
         nvidiaFromRpm;
 
@@ -158,20 +183,20 @@ let
             ${lib.optionalString (api == "Vulkan")
             "export VK_LAYER_PATH=${vulkan-validation-layers}/share/vulkan/explicit_layer.d"}
             NVIDIA_JSON=(${nvidiaLibsOnly}/share/glvnd/egl_vendor.d/*nvidia.json)
-            ${lib.optionalString enable32bits "NVIDIA_JSON32=(${nvidiaLibsOnly.lib32}/share/glvnd/egl_vendor.d/*nvidia.json)"}
+            ${lib.optionalString enable32bits
+            "NVIDIA_JSON32=(${nvidiaLibsOnly.lib32}/share/glvnd/egl_vendor.d/*nvidia.json)"}
 
-            ${''export __EGL_VENDOR_LIBRARY_FILENAMES=''${NVIDIA_JSON[*]}${
-              lib.optionalString enable32bits
-              '':''${NVIDIA_JSON32[*]}''
-              }"''${__EGL_VENDOR_LIBRARY_FILENAMES:+:$__EGL_VENDOR_LIBRARY_FILENAMES}"''
-            }
+            ${''
+              export __EGL_VENDOR_LIBRARY_FILENAMES=''${NVIDIA_JSON[*]}${
+                lib.optionalString enable32bits ":\${NVIDIA_JSON32[*]}"
+              }"''${__EGL_VENDOR_LIBRARY_FILENAMES:+:$__EGL_VENDOR_LIBRARY_FILENAMES}"''}
 
               ${
-                lib.optionalString (api == "Vulkan")
-                ''export VK_ICD_FILENAMES=${nvidiaLibsOnly}/share/vulkan/icd.d/nvidia_icd.x86_64.json${
-                  lib.optionalString enable32bits
-                  ":${nvidiaLibsOnly.lib32}/share/vulkan/icd.d/nvidia_icd.i686.json"
-                }"''${VK_ICD_FILENAMES:+:$VK_ICD_FILENAMES}"''
+                lib.optionalString (api == "Vulkan") ''
+                  export VK_ICD_FILENAMES=${nvidiaLibsOnly}/share/vulkan/icd.d/nvidia_icd.x86_64.json${
+                    lib.optionalString enable32bits
+                    ":${nvidiaLibsOnly.lib32}/share/vulkan/icd.d/nvidia_icd.i686.json"
+                  }"''${VK_ICD_FILENAMES:+:$VK_ICD_FILENAMES}"''
               }
               export LD_LIBRARY_PATH=${
                 lib.makeLibraryPath ([ libglvnd nvidiaLibsOnly ]
@@ -192,12 +217,10 @@ let
       nixVulkanNvidia = nixNvidiaWrapper "Vulkan";
     };
 
+    nixGLMesa = writeNixGL "nixGLMesa" [ ];
 
-    nixGLMesa = writeNixGL "nixGLMesa" [  ];
-
-    nixGLIntel = writeNixGL "nixGLIntel"
-      ([ intel-media-driver ]
-       ++ lib.optionals enable32bits [ pkgsi686Linux.intel-media-driver ]);
+    nixGLIntel = writeNixGL "nixGLIntel" ([ intel-media-driver ]
+      ++ lib.optionals enable32bits [ pkgsi686Linux.intel-media-driver ]);
 
     nixVulkanMesa = writeExecutable {
       name = "nixVulkanIntel";
@@ -274,7 +297,7 @@ let
           versionMatch = builtins.match ".*Module  ([0-9.]+)  .*" data;
         in if versionMatch != null then builtins.head versionMatch else null;
 
-      autoNvidia = nvidiaPackages {version = nvidiaVersionAuto; };
+      autoNvidia = nvidiaPackages { version = nvidiaVersionAuto; };
     in rec {
       # The output derivation contains nixGL which point either to
       # nixGLNvidia or nixGLIntel using an heuristic.
