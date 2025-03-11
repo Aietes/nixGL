@@ -126,7 +126,9 @@ let
         '';
       };
 
-      nvidiaDrivers = if driverSource == "driver" then
+      nvidiaDrivers = if driverSource == "rhel" then
+        null
+      else
         (linuxPackages.nvidia_x11.override { }).overrideAttrs (oldAttrs: rec {
           pname = "nvidia";
           name = "nvidia-x11-${version}-nixGL";
@@ -140,17 +142,15 @@ let
             builtins.fetchurl url;
           useGLVND = true;
           nativeBuildInputs = oldAttrs.nativeBuildInputs or [ ] ++ [ zstd ];
-        })
-      else
-        null;
+        });
 
-      nvidiaLibsOnly = if driverSource == "driver" then
+      nvidiaLibsOnly = if driverSource == "rhel" then
+        nvidiaFromRpm
+      else
         (nvidiaDrivers.override {
           libsOnly = true;
           kernel = null;
-        })
-      else
-        nvidiaFromRpm;
+        });
 
       nixGLNvidiaBumblebee = writeExecutable {
         name = "nixGLNvidiaBumblebee-${version}";
