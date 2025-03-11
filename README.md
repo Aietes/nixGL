@@ -21,8 +21,8 @@ libGL error: failed to load driver: swrast
 NixGL provides a set of wrappers able to launch GL or Vulkan applications:
 
 ```bash
-$ nixGL program
-$ nixVulkan program
+nixGL program
+nixVulkan program
 ```
 
 # Installation
@@ -32,8 +32,8 @@ $ nixVulkan program
 To get started,
 
 ```bash
-$ nix-channel --add https://github.com/nix-community/nixGL/archive/main.tar.gz nixgl && nix-channel --update
-$ nix-env -iA nixgl.auto.nixGLDefault   # or replace `nixGLDefault` with your desired wrapper
+nix-channel --add https://github.com/nix-community/nixGL/archive/main.tar.gz nixgl && nix-channel --update
+nix-env -iA nixgl.auto.nixGLDefault   # or replace `nixGLDefault` with your desired wrapper
 ```
 
 Many wrappers are available, depending on your hardware and the graphical API you want to use (i.e. Vulkan or OpenGL). You may want to install a few of them, for example if you want to support OpenGL and Vulkan on a laptop with an hybrid configuration.
@@ -84,7 +84,6 @@ nix profile install github:guibou/nixGL --impure
 
 This will result in a lighter download and execution time. Also, this evaluation is pure.
 
-
 #### Error about experimental features
 
 You can directly use:
@@ -98,6 +97,7 @@ Or set the appropriate conf in `~/.config/nix/nix.conf` / `/etc/nix/nix.conf` / 
 #### Error with GLIBC version
 
 if you get errors with messages similar to
+
 ```
 /nix/store/g02b1lpbddhymmcjb923kf0l7s9nww58-glibc-2.33-123/lib/libc.so.6: version `GLIBC_2.34' not found (required by /nix/store/hrl51nkr7dszlwcs29wmyxq0jsqlaszn-libglvnd-1.4.0/lib/libGLX.so.0)
 ```
@@ -107,7 +107,6 @@ It means that there's a mismatch between the versions of `nixpkgs` used by `nixG
 ### Use an overlay
 
 Add nixGL as a flake input:
-
 
 ```Nix
 {
@@ -134,12 +133,39 @@ Then, use the flake's `overlay` attr:
 }
 ```
 
+### Install from RHEL repository (Rocky, CentOS, Fedora, etc.)
+
+On RHEL the NVIDIA driver is typically installed via the official NVIDIA driver repositories. Trying to install the driver from the download site will commonly fail with a 404 error. This is due to the fact that NVIDIA is not providing consistent versions of their drivers across distribution channels, so you might have a driver version installed on your system that is not available on the download site. Therefore on RHEL distros the driver should be retrieved from the RHEL repository, and extracted from an official `.rpm`.
+
+To get the driver from the RHEL `.rpm` instead of the driver download site, simply set `driverSource` to `rhel`. Also ensure that `enable32bits` is changed from its default to `false`, as a 32bit version of the driver is not included. Here's an example flake using
+the nixGL overlay with `home-manager`:
+
+```nix
+{
+  home.packages = with pkgs; [
+    (nixgl.override {
+      driverSource = "rhel";
+      enable32bits = false;
+    }).auto.nixGLDefault
+    (config.lib.nixGL.wrap ghostty)
+  ];
+
+  nixGL = {
+   packages = pkgs.nixgl.override {
+    driverSource = "rhel";
+    enable32bits = false;
+   };
+   defaultWrapper = "nvidia";
+  };
+};
+```
+
 ## Installation from source
 
 ```bash
-$ git clone https://github.com/nix-community/nixGL
-$ cd nixGL
-$ nix-env -f ./ -iA <your desired wrapper name>
+git clone https://github.com/nix-community/nixGL
+cd nixGL
+nix-env -f ./ -iA <your desired wrapper name>
 ```
 
 # Usage
@@ -149,17 +175,17 @@ Just launch the program you want prefixed by the right wrapper.
 For example, for OpenGL programs:
 
 ```bash
-$ nixGL program args                 # For the `nixGLDefault` wrapper, recommended.
-$ nixGLNvidia program args
-$ nixGLIntel program args
-$ nixGLNvidiaBumblebee program args
+nixGL program args                 # For the `nixGLDefault` wrapper, recommended.
+nixGLNvidia program args
+nixGLIntel program args
+nixGLNvidiaBumblebee program args
 ```
 
 For Vulkan programs:
 
 ```bash
-$ nixVulkanNvidia program args
-$ nixVulkanIntel program args
+nixVulkanNvidia program args
+nixVulkanIntel program args
 ```
 
 # OpenGL - Hybrid Intel + Nvidia laptop
@@ -176,7 +202,7 @@ OpenGL version string: 4.6.0 NVIDIA 390.25
 If the program you'd like to run is already installed by nix in your current environment, you can simply run it with the wrapper, for example:
 
 ```bash
-$ nixGLIntel blender
+nixGLIntel blender
 ```
 
 # Vulkan - Intel GPU
@@ -215,7 +241,6 @@ nix-build -A auto.nixGLNvidia --argstr nvidiaVersion 440.82
 ```
 
 (or `nixGLNvidiaBumblebee`, `nixVulkanNividia`)
-
 
 The version of your driver can be found using `glxinfo` from your system default package manager, or `nvidia-settings`.
 
