@@ -9,6 +9,9 @@ nvidiaHash ? null,
 # /proc/driver/nvidia/version. Nix doesn't like zero-sized files (see
 # https://github.com/NixOS/nix/issues/3539 ).
 nvidiaVersionFile ? null,
+# Nvidia driver source selection: "driver" (default) which will attempt to download .run file from NVIDIA's driver site
+# or "rhel", which downloads the RPM packages from NVIDIA's RHEL repository, ensuring a version match in RHEL systems like Rocky Linux, Fedora or CentOS.
+driverSource ? "driver",
 # Enable 32 bits driver
 # This is one by default, you can switch it to off if you want to reduce a
 # bit the size of nixGL closure.
@@ -16,7 +19,7 @@ enable32bits ? stdenv.hostPlatform.isx86
 , stdenv, writeTextFile, shellcheck, pcre, runCommand, linuxPackages
 , fetchurl, lib, runtimeShell, bumblebee, libglvnd, vulkan-validation-layers
 , mesa, libvdpau-va-gl, intel-media-driver, pkgsi686Linux, driversi686Linux
-, zlib, libdrm, xorg, wayland, gcc, zstd }:
+, zlib, libdrm, xorg, wayland, gcc, zstd, rpm, cpio }:
 
 let
   writeExecutable = { name, text }:
@@ -62,13 +65,59 @@ let
         exec "$@"
       '';
     };
+
   top = rec {
     /*
     It contains the builder for different nvidia configuration, parametrized by
     the version of the driver and sha256 sum of the driver installer file.
     */
     nvidiaPackages = { version, sha256 ? null }: rec {
-      nvidiaDrivers = (linuxPackages.nvidia_x11.override { }).overrideAttrs
+
+      # download rpm packages if RHEL is selected as driver source
+      rpmDriver = if driverSource == "rhel" then
+        builtins.fetchurl {
+          url = "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/nvidia-driver-${version}-1.el9.x86_64.rpm";
+        }
+      else
+        null;
+
+      rpmLibs = if driverSource == "rhel" then
+        builtins.fetchurl {
+          url = "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/nvidia-driver-libs-${version}-1.el9.x86_64.rpm";
+        }
+      else
+        null;
+
+      # Extract NVIDIA shared libraries from RPM
+      nvidiaFromRpm = stdenv.mkDerivation {
+        pname = "nvidia";
+        name = "nvidia-${version}-nixGL-rpm";
+        version = version;
+        preferLocalBuild = true;
+        allowSubstitutes = false;
+        nativeBuildInputs = [ rpm cpio ];
+        srcs = [ rpmDriver rpmLibs ];
+        unpackPhase = ''
+          mkdir -p $TMPDIR
+          cp ${rpmLibs} $TMPDIR/nvidia-driver-libs.rpm
+          cp ${rpmDriver} $TMPDIR/nvidia-driver.rpm
+        '';
+        buildPhase = ''
+          mkdir -p $out
+          cd $TMPDIR
+
+          rpm2cpio nvidia-driver-libs.rpm | cpio -idmv
+          mv usr/lib64 $out/lib
+          mv usr/share $out/share
+
+          rpm2cpio nvidia-driver.rpm | cpio -idmv
+          mv usr/bin $out/bin
+          mv usr/share $out/share
+          mv usr/lib $out/lib
+        '';
+      };
+
+      nvidiaDrivers = if driverSource == "driver" then (linuxPackages.nvidia_x11.override { }).overrideAttrs
         (oldAttrs: rec {
           pname = "nvidia";
           name = "nvidia-x11-${version}-nixGL";
@@ -82,12 +131,14 @@ let
             builtins.fetchurl url;
           useGLVND = true;
           nativeBuildInputs = oldAttrs.nativeBuildInputs or [] ++ [zstd];
-        });
+        })
+      else
+        null;
 
-      nvidiaLibsOnly = nvidiaDrivers.override {
-        libsOnly = true;
-        kernel = null;
-      };
+      nvidiaLibsOnly = if driverSource == "driver" then
+        (nvidiaDrivers.override { libsOnly = true; kernel = null; })
+      else
+        nvidiaFromRpm;
 
       nixGLNvidiaBumblebee = writeExecutable {
         name = "nixGLNvidiaBumblebee-${version}";
