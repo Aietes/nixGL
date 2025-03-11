@@ -74,13 +74,6 @@ let
     nvidiaPackages = { version, sha256 ? null }: rec {
 
       # download rpm packages if RHEL is selected as driver source
-      rpmDriver = if driverSource == "rhel" then
-        builtins.fetchurl {
-          url = "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/nvidia-driver-${version}-1.el9.x86_64.rpm";
-        }
-      else
-        null;
-
       rpmLibs = if driverSource == "rhel" then
         builtins.fetchurl {
           url = "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/nvidia-driver-libs-${version}-1.el9.x86_64.rpm";
@@ -96,11 +89,10 @@ let
         preferLocalBuild = true;
         allowSubstitutes = false;
         nativeBuildInputs = [ rpm cpio ];
-        srcs = [ rpmDriver rpmLibs ];
+        srcs = [ rpmLibs ];
         unpackPhase = ''
           mkdir -p $TMPDIR
           cp ${rpmLibs} $TMPDIR/nvidia-driver-libs.rpm
-          cp ${rpmDriver} $TMPDIR/nvidia-driver.rpm
         '';
         buildPhase = ''
           mkdir -p $out
@@ -109,11 +101,6 @@ let
           rpm2cpio nvidia-driver-libs.rpm | cpio -idmv
           mv usr/lib64 $out/lib
           mv usr/share $out/share
-
-          rpm2cpio nvidia-driver.rpm | cpio -idmv
-          mv usr/bin $out/bin
-          mv usr/share $out/share
-          mv usr/lib $out/lib
         '';
       };
 
