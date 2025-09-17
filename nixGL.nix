@@ -9,9 +9,10 @@ nvidiaHash ? null,
 # /proc/driver/nvidia/version. Nix doesn't like zero-sized files (see
 # https://github.com/NixOS/nix/issues/3539 ).
 nvidiaVersionFile ? null,
-# Nvidia driver source selection: "driver" (default) which will attempt to download .run file from NVIDIA's driver site
-# or "rhel", which downloads the RPM packages from NVIDIA's RHEL repository, ensuring a version match in RHEL systems like Rocky Linux, Fedora or CentOS.
+# Nvidia driver source selection: "driver" (default) or "rhel" (downloads RPMs from NVIDIA's RHEL repo)
 driverSource ? "driver",
+# RHEL major version (e.g., 9 or 10) for NVIDIA RPM URLs. User must set this if using driverSource = "rhel"
+rhelMajorVersion ? 10,
 # Enable 32 bits driver
 # This is one by default, you can switch it to off if you want to reduce a
 # bit the size of nixGL closure.
@@ -85,7 +86,7 @@ let
       rpmLibs = if driverSource == "rhel" then
         builtins.fetchurl {
           url =
-            "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/nvidia-driver-libs-${version}-1.el9.x86_64.rpm";
+            "https://developer.download.nvidia.com/compute/cuda/repos/rhel${toString rhelMajorVersion}/x86_64/nvidia-driver-libs-${version}-1.el${toString rhelMajorVersion}.x86_64.rpm";
         }
       else
         null;
@@ -94,7 +95,7 @@ let
       rpmMl = if driverSource == "rhel" then
         builtins.fetchurl {
           url =
-            "https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/libnvidia-ml-${version}-1.el9.x86_64.rpm";
+            "https://developer.download.nvidia.com/compute/cuda/repos/rhel${toString rhelMajorVersion}/x86_64/libnvidia-ml-${version}-1.el${toString rhelMajorVersion}.x86_64.rpm";
         }
       else
         null;

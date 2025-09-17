@@ -154,6 +154,7 @@ the nixGL overlay with `home-manager`:
    packages = pkgs.nixgl.override {
     driverSource = "rhel";
     enable32bits = false;
+    rhelMajorVersion = 10;
    };
    defaultWrapper = "nvidia";
   };
