@@ -12,8 +12,8 @@ nvidiaVersionFile ? null,
 # Nvidia driver source selection:
 #   "driver" (default) - download the .run installer from NVIDIA's XFree86 site.
 #   "rhel"             - extract the libraries from the RPMs in NVIDIA's RHEL CUDA repo.
-# Why "rhel" is needed: on RHEL-based distros (Rocky, RHEL, CentOS, Fedora) the
-# driver is installed from NVIDIA's RHEL repository, and many of those exact
+# Why "rhel" is needed: on RHEL-family distros (RHEL, Rocky, AlmaLinux, CentOS
+# Stream) the driver is installed from NVIDIA's RHEL repository, and many of those
 # versions are never published as a standalone .run installer on the XFree86
 # site. The two channels carry different sets of version numbers. Since nixGL
 # auto-detects the *installed* version, the default "driver" source frequently
@@ -31,6 +31,11 @@ enable32bits ? stdenv.hostPlatform.isx86
 , fetchurl, lib, runtimeShell, bumblebee, libglvnd, vulkan-validation-layers
 , mesa, libvdpau-va-gl, intel-media-driver, pkgsi686Linux, driversi686Linux
 , zlib, libdrm, xorg, wayland, gcc, zstd, rpm, cpio }:
+
+# The "rhel" source only ships 64-bit libraries (no lib32 output), so fail fast
+# with a clear message rather than a confusing missing-attribute error later.
+assert lib.assertMsg (!(driverSource == "rhel" && enable32bits))
+  ''nixGL: driverSource = "rhel" provides 64-bit libraries only; set enable32bits = false when using it.'';
 
 let
   writeExecutable = { name, text }:
@@ -115,6 +120,8 @@ let
         inherit version;
         preferLocalBuild = true;
         allowSubstitutes = false;
+        # $out is populated entirely in buildPhase; there is no Makefile to install.
+        dontInstall = true;
         nativeBuildInputs = [ rpm cpio ];
         srcs = [ rpmLibs rpmMl ];
         unpackPhase = ''
@@ -138,7 +145,10 @@ let
       };
 
       nvidiaDrivers = if driverSource == "rhel" then
-        null
+        # Evaluated lazily: only forced if a consumer that needs the full driver
+        # (e.g. the Bumblebee wrapper) is built. The RPM path provides libraries
+        # only, with no kernel-module driver, so those wrappers are unsupported.
+        throw ''nixGL: driverSource = "rhel" provides prebuilt libraries only and has no kernel-module driver, so nixGLNvidiaBumblebee is unavailable; use nixGLNvidia or nixVulkanNvidia instead.''
       else
         (linuxPackages.nvidia_x11.override { }).overrideAttrs
         (oldAttrs: rec {

@@ -134,7 +134,7 @@ Then, use the flake's `overlay` attr:
 }
 ```
 
-### Install from RHEL repository (Rocky, CentOS, Fedora, etc.)
+### Install from RHEL repository (RHEL, Rocky, AlmaLinux, CentOS Stream)
 
 On RHEL-based distros the NVIDIA driver is installed from NVIDIA's official driver repositories, and the exact installed version is rarely (if ever) published as a `.run` file on the driver download site. Trying to fetch it from there typically fails with a 404. To guarantee a version match, nixGL can instead extract the driver libraries from the official `.rpm` packages in NVIDIA's RHEL CUDA repository.
 
