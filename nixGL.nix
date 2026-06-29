@@ -9,9 +9,16 @@ nvidiaHash ? null,
 # /proc/driver/nvidia/version. Nix doesn't like zero-sized files (see
 # https://github.com/NixOS/nix/issues/3539 ).
 nvidiaVersionFile ? null,
-# Nvidia driver source selection: "driver" (default) downloads the .run file from
-# NVIDIA's driver site; "rhel" downloads the RPMs from NVIDIA's RHEL CUDA repo,
-# ensuring a version match on RHEL-based distros (Rocky, CentOS, Fedora).
+# Nvidia driver source selection:
+#   "driver" (default) - download the .run installer from NVIDIA's XFree86 site.
+#   "rhel"             - extract the libraries from the RPMs in NVIDIA's RHEL CUDA repo.
+# Why "rhel" is needed: on RHEL-based distros (Rocky, RHEL, CentOS, Fedora) the
+# driver is installed from NVIDIA's RHEL repository, and many of those exact
+# versions are never published as a standalone .run installer on the XFree86
+# site. The two channels carry different sets of version numbers. Since nixGL
+# auto-detects the *installed* version, the default "driver" source frequently
+# 404s for it. Pulling from the same RHEL repo that supplied the running driver
+# guarantees the exact version is available.
 driverSource ? "driver",
 # RHEL major version (e.g. 9 or 10) used to build the NVIDIA RPM URLs. Only used
 # when driverSource = "rhel"; set it to match your distribution.
