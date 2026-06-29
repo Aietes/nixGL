@@ -161,6 +161,17 @@ the nixGL overlay with `home-manager`:
 };
 ```
 
+Set `rhelMajorVersion` to match your distribution (e.g. `9` or `10`); it selects the `rhelN`/`elN` repository path.
+
+NVIDIA occasionally reorganizes how the driver is split across RPMs. nixGL pulls
+the GL/EGL/GLX libraries from `nvidia-driver-libs` and the NVML library
+(`libnvidia-ml.so`, needed by tools like `btop`) from a second package. Up to the
+595 branch that package is the standalone `libnvidia-ml`; starting with the 610
+branch NVIDIA dropped it and moved NVML into `nvidia-driver-common`, so nixGL
+selects the right one automatically based on your detected driver branch. If a
+future branch reshuffles packaging again, the `mlPackage` selection in
+`nixGL.nix` is where to adjust it.
+
 ## Installation from source
 
 ```bash

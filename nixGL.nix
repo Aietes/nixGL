@@ -82,21 +82,30 @@ let
     */
     nvidiaPackages = { version, sha256 ? null }: rec {
 
+      # Helper to build a URL for a package in NVIDIA's RHEL CUDA repo.
+      rpmUrl = pkg:
+        "https://developer.download.nvidia.com/compute/cuda/repos/rhel${toString rhelMajorVersion}/x86_64/${pkg}-${version}-1.el${toString rhelMajorVersion}.x86_64.rpm";
+
+      # NVIDIA reorganized the CUDA-repo driver packaging with the 610 branch:
+      # the standalone `libnvidia-ml` RPM (shipped for 580..595) was dropped, and
+      # libnvidia-ml.so moved into the new `nvidia-driver-common` package (which
+      # also carries libnvidia-cfg.so and libnvidia-gpucomp.so). Pick whichever
+      # package provides NVML for the detected driver branch.
+      driverBranch = lib.toInt (lib.versions.major version);
+      mlPackage =
+        if driverBranch >= 610 then "nvidia-driver-common" else "libnvidia-ml";
+
       # download rpm packages if RHEL is selected as driver source
       rpmLibs = if driverSource == "rhel" then
-        builtins.fetchurl {
-          url =
-            "https://developer.download.nvidia.com/compute/cuda/repos/rhel${toString rhelMajorVersion}/x86_64/nvidia-driver-libs-${version}-1.el${toString rhelMajorVersion}.x86_64.rpm";
-        }
+        builtins.fetchurl { url = rpmUrl "nvidia-driver-libs"; }
       else
         null;
 
-      # also get the ml library if RHEL is selected as driver source, required by btop and other tools
+      # also get the NVML library (libnvidia-ml.so) if RHEL is selected as driver
+      # source, required by btop and other tools. Its providing package depends
+      # on the driver branch (see mlPackage above).
       rpmMl = if driverSource == "rhel" then
-        builtins.fetchurl {
-          url =
-            "https://developer.download.nvidia.com/compute/cuda/repos/rhel${toString rhelMajorVersion}/x86_64/libnvidia-ml-${version}-1.el${toString rhelMajorVersion}.x86_64.rpm";
-        }
+        builtins.fetchurl { url = rpmUrl mlPackage; }
       else
         null;
 
@@ -112,7 +121,7 @@ let
         unpackPhase = ''
           mkdir -p $TMPDIR
           cp ${rpmLibs} $TMPDIR/nvidia-driver-libs.rpm
-          cp ${rpmMl} $TMPDIR/libnvidia-ml.rpm
+          cp ${rpmMl} $TMPDIR/nvidia-ml.rpm
         '';
         buildPhase = ''
           mkdir -p $out $out/lib $out/share
@@ -122,7 +131,9 @@ let
           mv usr/lib64/* $out/lib
           mv usr/share/* $out/share
 
-          rpm2cpio libnvidia-ml.rpm | cpio -idmv
+          # The NVML package (libnvidia-ml or nvidia-driver-common depending on
+          # the driver branch) only ships libraries under usr/lib64.
+          rpm2cpio nvidia-ml.rpm | cpio -idmv
           mv usr/lib64/* $out/lib
         '';
       };
