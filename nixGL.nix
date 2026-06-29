@@ -46,32 +46,25 @@ let
       inherit name;
       # add the 32 bits drivers if needed
       text = let
-        mesa-drivers = [ mesa.drivers ]
-          ++ lib.optional enable32bits pkgsi686Linux.mesa.drivers;
+        mesa-drivers = [ mesa ]
+          ++ lib.optional enable32bits pkgsi686Linux.mesa;
         libvdpau = [ libvdpau-va-gl ]
           ++ lib.optional enable32bits pkgsi686Linux.libvdpau-va-gl;
         glxindirect = runCommand "mesa_glxindirect" { } (''
           mkdir -p $out/lib
-          ln -s ${mesa.drivers}/lib/libGLX_mesa.so.0 $out/lib/libGLX_indirect.so.0
+          ln -s ${mesa}/lib/libGLX_mesa.so.0 $out/lib/libGLX_indirect.so.0
         '');
       in ''
         #!${runtimeShell}
-        export LIBGL_DRIVERS_PATH=${
-          lib.makeSearchPathOutput "lib" "lib/dri" mesa-drivers
+        export GBM_BACKENDS_PATH=${lib.makeSearchPathOutput "lib" "lib/gbm" mesa-drivers}
+        export LIBGL_DRIVERS_PATH=${lib.makeSearchPathOutput "lib" "lib/dri" mesa-drivers}
+        export LIBVA_DRIVERS_PATH=${lib.makeSearchPathOutput "out" "lib/dri" (mesa-drivers ++ vadrivers)}
+        ${''export __EGL_VENDOR_LIBRARY_FILENAMES=${mesa}/share/glvnd/egl_vendor.d/50_mesa.json${
+          lib.optionalString enable32bits
+          ":${pkgsi686Linux.mesa}/share/glvnd/egl_vendor.d/50_mesa.json"
+          }"''${__EGL_VENDOR_LIBRARY_FILENAMES:+:$__EGL_VENDOR_LIBRARY_FILENAMES}"''
         }
-        export LIBVA_DRIVERS_PATH=${
-          lib.makeSearchPathOutput "out" "lib/dri" (mesa-drivers ++ vadrivers)
-        }
-        ${''
-          export __EGL_VENDOR_LIBRARY_FILENAMES=${mesa.drivers}/share/glvnd/egl_vendor.d/50_mesa.json${
-            lib.optionalString enable32bits
-            ":${pkgsi686Linux.mesa.drivers}/share/glvnd/egl_vendor.d/50_mesa.json"
-          }"''${__EGL_VENDOR_LIBRARY_FILENAMES:+:$__EGL_VENDOR_LIBRARY_FILENAMES}"''}
-        export LD_LIBRARY_PATH=${lib.makeLibraryPath mesa-drivers}:${
-          lib.makeSearchPathOutput "lib" "lib/vdpau" libvdpau
-        }:${glxindirect}/lib:${
-          lib.makeLibraryPath [ libglvnd ]
-        }"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH=${lib.makeLibraryPath mesa-drivers}:${lib.makeSearchPathOutput "lib" "lib/vdpau" libvdpau}:${glxindirect}/lib:${lib.makeLibraryPath [libglvnd]}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         exec "$@"
       '';
     };
@@ -241,11 +234,11 @@ let
         icd = runCommand "mesa_icd" { } (
           # 64 bits icd
           ''
-            ls ${mesa.drivers}/share/vulkan/icd.d/*.json > f
+            ls ${mesa}/share/vulkan/icd.d/*.json > f
           ''
           #  32 bits ones
           + lib.optionalString enable32bits ''
-            ls ${pkgsi686Linux.mesa.drivers}/share/vulkan/icd.d/*.json >> f
+            ls ${pkgsi686Linux.mesa}/share/vulkan/icd.d/*.json >> f
           ''
           # concat everything as a one line string with ":" as seperator
           + ''cat f | xargs | sed "s/ /:/g" > $out'');
