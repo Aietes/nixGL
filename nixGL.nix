@@ -318,8 +318,10 @@ let
       # Get if from the nvidiaVersionFile
         let
           data = builtins.readFile _nvidiaVersionFile;
-          versionMatch = builtins.match ".*Module  ([0-9.]+)  .*" data;
-        in if versionMatch != null then builtins.head versionMatch else null;
+          # Matches both the proprietary ("Kernel Module  X.Y.Z") and the open
+          # ("Open Kernel Module for x86_64  X.Y.Z") kernel module strings.
+          versionMatch = builtins.match ".*Module( for [^ ]+)?  ([0-9.]+)  .*" data;
+        in if versionMatch != null then builtins.elemAt versionMatch 1 else null;
 
       autoNvidia = nvidiaPackages {version = nvidiaVersionAuto; };
     in rec {
